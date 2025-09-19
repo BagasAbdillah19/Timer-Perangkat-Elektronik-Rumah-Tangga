@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Rice Cooker Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-database.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+        
+        html, body {
+            height: 100%; width: 100%; overflow: hidden;
+        }
+        body {
+            background-color: #111827;
+            font-family: 'Poppins', sans-serif;
+            display: flex; justify-content: center; align-items: center;
+        }
+        body.dashboard-active { display: block; }
+        #dashboard { display: none; }
+        body.dashboard-active #dashboard {
+            display: flex; flex-direction: column; width: 100%; height: 100%;
+        }
+        main {
+            flex-grow: 1;
+            overflow-y: hidden;
+            display: flex;
+            flex-direction: column;
+            /* DIUBAH: Hapus justify-content: center; agar konten tidak dipaksa ke tengah secara vertikal */
+        }
+        .dashboard-card {
+            background-color: rgba(31, 41, 55, 0.7); backdrop-filter: blur(10px);
+            border-radius: 1.5rem; 
+            /* DIUBAH: Kurangi padding vertikal dari 1rem (16px) menjadi 0.75rem (12px) */
+            padding: 0.75rem 1.25rem;
+            border: 1px solid rgba(55, 65, 81, 1);
+            flex-shrink: 0;
+        }
+        
+        .switch { position: relative; display: inline-block; width: 74px; height: 38px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ef4444; transition: .4s; border-radius: 38px; }
+        .slider:before { position: absolute; content: ""; height: 30px; width: 30px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #22c55e; }
+        input:checked + .slider:before { transform: translateX(36px); }
+    </style>
+</head>
+<body class="text-gray-200">
+
+    <div id="loginForm" class="w-full max-w-sm p-4">
+        <div class="bg-gray-900/50 backdrop-blur-md p-8 rounded-2xl shadow-lg text-center border border-blue-700/50">
+            <img src="https://cdn-icons-png.flaticon.com/512/3597/3597425.png" alt="Rice Cooker Icon" class="w-20 mb-4 mx-auto">
+            <h2 class="text-2xl font-bold text-blue-400 mb-6">System Access</h2>
+            <input type="email" id="login-email" placeholder="Email" value="bagassehat@gmail.com" class="w-full bg-gray-700 text-white p-3 rounded-lg mb-4 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="password" id="password" placeholder="Password" value="1234567" class="w-full bg-gray-700 text-white p-3 rounded-lg mb-4 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="loginBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition">Login</button>
+            <p id="loginError" class="text-red-500 mt-4 h-4"></p>
+        </div>
+    </div>
+
+    <div id="dashboard" class="p-4">
+        <header class="text-center mb-2 mt-1 flex-shrink-0">
+            <h1 class="text-2xl font-bold text-blue-300">IoT Rice Cooker Control</h1>
+        </header>
+
+        <main class="w-full max-w-md mx-auto">
+             <div class="flex flex-col gap-2">
+                <div class="dashboard-card text-center">
+                    <h3 class="text-lg font-semibold text-blue-300 mb-1">SYSTEM STATUS</h3>
+                    <p id="status-text" class="text-5xl font-bold transition-colors duration-500">...</p>
+                    <p id="schedule-status-text" class="text-sm text-yellow-400 h-5"></p>
+                </div>
+                
+                <div class="dashboard-card text-center">
+                    <h3 class="text-lg font-semibold text-blue-300 mb-2">MANUAL OVERRIDE</h3>
+                    <div class="flex justify-center items-center">
+                        <label class="switch">
+                            <input type="checkbox" id="manual-toggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="dashboard-card text-center">
+                    <h3 class="text-lg font-semibold text-blue-300 mb-2">SCHEDULED TASK</h3>
+                    <div class="flex flex-col space-y-2 mt-2 text-left">
+                        <div>
+                            <label class="text-sm text-gray-400">Activation Time</label>
+                            <input type="time" id="waktu-mulai" class="w-full bg-gray-700 text-white p-2 rounded-lg mt-1 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-base">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-400">Duration (Minutes)</label>
+                            <input type="number" id="durasi" value="25" class="w-full bg-gray-700 text-white p-2 rounded-lg mt-1 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-base">
+                        </div>
+                    </div>
+                      <button id="btnSetJadwal" class="w-full mt-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 transition font-semibold text-base">SET SCHEDULE</button>
+                      <button id="btnClearSchedule" class="w-full mt-2 py-2 rounded-xl bg-red-600 hover:bg-red-500 transition font-semibold text-sm">CLEAR SCHEDULE</button>
+                </div>
+            </div>
+        </main>
+            
+        <footer class="text-center mt-2 flex-shrink-0">
+            <button id="logoutBtn" class="py-2 px-4 rounded-lg bg-gray-600 hover:bg-gray-500 transition font-semibold">Logout</button>
+        </footer>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyD5GxgGDcvAcDJQ5z6DYb0VluOdlx7Z3vI",
+            authDomain: "timer-perangkat-elektronik.firebaseapp.com",
+            databaseURL: "https://timer-perangkat-elektronik-default-rtdb.firebaseio.com",
+            projectId: "timer-perangkat-elektronik",
+            storageBucket: "timer-perangkat-elektronik.appspot.com",
+            messagingSenderId: "770555965511",
+            appId: "1:770555965511:web:f06d9ea8d63f4e35b10162",
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.database();
+
+        const loginForm = document.getElementById('loginForm');
+        const dashboard = document.getElementById('dashboard');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        
+        let activeSchedule = null;
+        let scheduleCheckInterval = null;
+        let isManualMode = false; // Flag untuk tracking manual mode
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                loginForm.style.display = 'none';
+                document.body.classList.add('dashboard-active');
+                dashboard.style.display = 'flex';
+                initDashboardListeners();
+            } else {
+                loginForm.style.display = 'block';
+                document.body.classList.remove('dashboard-active');
+                dashboard.style.display = 'none';
+                if (scheduleCheckInterval) clearInterval(scheduleCheckInterval);
+            }
+        });
+
+        loginBtn.addEventListener('click', () => {
+            const email = document.getElementById("login-email").value;
+            const password = document.getElementById("password").value;
+            auth.signInWithEmailAndPassword(email, password)
+                .catch(error => document.getElementById('loginError').textContent = "Email atau Password Salah.");
+        });
+        
+        logoutBtn.addEventListener('click', () => auth.signOut());
+
+        // Fungsi untuk update status dan relay secara bersamaan
+        function updateSystemState(status, relayState) {
+            const statusRef = db.ref('status');
+            const relay1Ref = db.ref('relay1');
+            
+            console.log(`Updating system: status=${status}, relay=${relayState}`);
+            statusRef.set(status);
+            relay1Ref.set(relayState);
+        }
+
+        function updateStatusUI(status) {
+            const statusText = document.getElementById('status-text');
+            const manualToggle = document.getElementById('manual-toggle');
+            
+            statusText.textContent = status || "OFFLINE";
+            
+            // Sync manual toggle dengan status tanpa memicu event
+            manualToggle.removeEventListener('change', manualToggleHandler);
+            manualToggle.checked = (status === "ON");
+            manualToggle.addEventListener('change', manualToggleHandler);
+
+            let colorClass = 'text-gray-500';
+            if (status === "ON") colorClass = 'text-green-500';
+            if (status === "OFF") colorClass = 'text-red-500';
+            if (status === "IDLE") colorClass = 'text-yellow-400';
+
+            statusText.className = `text-5xl font-bold transition-colors duration-500 ${colorClass}`;
+        }
+
+        // Fungsi untuk mengecek validitas jadwal
+        function checkScheduleValidity() {
+            if (!activeSchedule) return;
+
+            const now = new Date();
+            const currentTime = now.toTimeString().substring(0, 5);
+            const [scheduleHour, scheduleMinute] = activeSchedule.time.split(':').map(Number);
+            const scheduleDurationMs = activeSchedule.duration;
+            
+            // Buat objek Date untuk waktu jadwal hari ini
+            const scheduleStart = new Date();
+            scheduleStart.setHours(scheduleHour, scheduleMinute, 0, 0);
+            
+            const scheduleEnd = new Date(scheduleStart.getTime() + scheduleDurationMs);
+            
+            // Cek apakah sekarang dalam rentang jadwal
+            const isInScheduleRange = now >= scheduleStart && now <= scheduleEnd;
+            
+            console.log(`Schedule check: current=${currentTime}, schedule=${activeSchedule.time}-${scheduleEnd.toTimeString().substring(0, 5)}, inRange=${isInScheduleRange}, isManual=${isManualMode}`);
+            
+            // Jika tidak dalam mode manual dan tidak dalam rentang jadwal, matikan
+            if (!isManualMode && !isInScheduleRange) {
+                if (now > scheduleEnd) {
+                    // Jadwal sudah selesai, hapus jadwal
+                    console.log('Schedule finished, clearing schedule');
+                    db.ref('jadwal').remove();
+                } else {
+                    // Belum waktunya jadwal
+                    console.log('Not yet schedule time, setting to IDLE');
+                    updateSystemState('IDLE', false);
+                }
+            }
+        }
+
+        // Handler untuk manual toggle
+        function manualToggleHandler() {
+            const manualToggle = document.getElementById('manual-toggle');
+            const isChecked = manualToggle.checked;
+            
+            isManualMode = isChecked; // Set manual mode flag
+            
+            if (isChecked) {
+                console.log('Manual override: ON');
+                updateSystemState('ON', true);
+            } else {
+                console.log('Manual override: OFF');
+                updateSystemState('OFF', false);
+                isManualMode = false; // Reset manual mode
+                
+                // Cek validitas jadwal setelah manual dimatikan
+                setTimeout(checkScheduleValidity, 100);
+            }
+        }
+
+        function initDashboardListeners() {
+            const scheduleStatusText = document.getElementById('schedule-status-text');
+            const manualToggle = document.getElementById('manual-toggle');
+            const btnSetJadwal = document.getElementById('btnSetJadwal');
+            const btnClearSchedule = document.getElementById('btnClearSchedule');
+            const inputWaktu = document.getElementById('waktu-mulai');
+            const inputDurasi = document.getElementById('durasi');
+            
+            const statusRef = db.ref('status');
+            const jadwalRef = db.ref('jadwal');
+            
+            // Listen to status changes
+            statusRef.on("value", snap => {
+                updateStatusUI(snap.val());
+            });
+
+            // Listen to schedule changes
+            jadwalRef.on("value", snap => {
+                const jadwal = snap.val();
+                if (jadwal && jadwal.jamMulai) {
+                    inputWaktu.value = jadwal.jamMulai;
+                    inputDurasi.value = jadwal.durasiMenit || 25;
+                    activeSchedule = {
+                        time: jadwal.jamMulai,
+                        duration: (jadwal.durasiMenit || 25) * 60 * 1000,
+                        startTime: null,
+                        isRunning: false
+                    };
+                    scheduleStatusText.textContent = `Scheduled for ${jadwal.jamMulai} (${jadwal.durasiMenit || 25}min)`;
+                    
+                    // Cek validitas jadwal setelah set
+                    setTimeout(checkScheduleValidity, 100);
+                } else {
+                    inputWaktu.value = '';
+                    inputDurasi.value = 25;
+                    if(activeSchedule) scheduleStatusText.textContent = 'Schedule cleared.';
+                    activeSchedule = null;
+                    
+                    // Jika tidak ada jadwal dan tidak manual, matikan sistem
+                    if (!isManualMode) {
+                        updateSystemState('OFF', false);
+                    }
+                }
+            });
+
+            // Manual toggle handler
+            manualToggle.addEventListener('change', manualToggleHandler);
+            
+            // Set schedule button
+            btnSetJadwal.addEventListener('click', () => {
+                const jamMulai = inputWaktu.value;
+                const durasi = parseInt(inputDurasi.value, 10);
+                if (jamMulai && durasi > 0) {
+                    jadwalRef.set({ jamMulai, durasiMenit: durasi })
+                        .then(() => {
+                            alert('Jadwal berhasil dikirim!');
+                            isManualMode = false; // Reset manual mode saat set jadwal
+                        })
+                        .catch(error => alert('Gagal menyimpan jadwal.'));
+                } else {
+                    alert('Harap tentukan waktu dan durasi yang valid.');
+                }
+            });
+
+            // Clear schedule button
+            btnClearSchedule.addEventListener('click', () => {
+                jadwalRef.remove()
+                    .then(() => {
+                        alert('Jadwal berhasil dihapus!');
+                        scheduleStatusText.textContent = '';
+                    })
+                    .catch(error => alert('Gagal menghapus jadwal.'));
+            });
+
+            // Schedule checker interval
+            if (scheduleCheckInterval) clearInterval(scheduleCheckInterval);
+            scheduleCheckInterval = setInterval(() => {
+                if (!activeSchedule || isManualMode) return;
+
+                const now = new Date();
+                const currentTime = now.toTimeString().substring(0, 5);
+                const [scheduleHour, scheduleMinute] = activeSchedule.time.split(':').map(Number);
+                
+                // Buat objek Date untuk waktu jadwal hari ini
+                const scheduleStart = new Date();
+                scheduleStart.setHours(scheduleHour, scheduleMinute, 0, 0);
+                const scheduleEnd = new Date(scheduleStart.getTime() + activeSchedule.duration);
+                
+                // Cek apakah sekarang dalam rentang jadwal
+                const isInScheduleRange = now >= scheduleStart && now <= scheduleEnd;
+                
+                if (isInScheduleRange && !activeSchedule.isRunning) {
+                    // Mulai jadwal
+                    console.log('Starting scheduled task');
+                    activeSchedule.isRunning = true;
+                    activeSchedule.startTime = now.getTime();
+                    updateSystemState('ON', true);
+                    scheduleStatusText.textContent = `Running... (${Math.ceil((scheduleEnd - now) / 60000)}min left)`;
+                } else if (now > scheduleEnd && activeSchedule.isRunning) {
+                    // Selesai jadwal
+                    console.log('Scheduled task finished, removing schedule');
+                    jadwalRef.remove(); // Akan trigger listener yang akan handle cleanup
+                } else if (isInScheduleRange && activeSchedule.isRunning) {
+                    // Update countdown
+                    const minutesLeft = Math.ceil((scheduleEnd - now) / 60000);
+                    scheduleStatusText.textContent = `Running... (${minutesLeft}min left)`;
+                }
+                
+                // Cek validitas jadwal secara berkala
+                checkScheduleValidity();
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
